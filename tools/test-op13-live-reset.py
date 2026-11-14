@@ -3,8 +3,13 @@
 from pathlib import Path
 import subprocess,tempfile
 ROOT=Path(__file__).resolve().parents[1]
-s=(ROOT/'experimental/uefi-turtle/live-reset-v12/loader-src/loader.c').read_text()
-prefix=s[s.index('static void\nfb_command(char *cmd)'):s.index(' if(str_eq(cmd,"oem sm8750-display-te"))')]
+s=(ROOT/'source/ios27/xnuloader/loader.c').read_text()
+# The dispatch handler keeps growing; the reset/lease-guard block under test is
+# the cold-reset branch plus the touch-lease guards, which end where the Wi-Fi
+# handoff guards begin. Anchor on those markers instead of a line offset.
+start=s.index('static void\nfb_command(char *cmd)')
+end=s.index(' if(op13_wifi_votes_stuck&&',start)
+prefix=s[start:end]
 source=r'''
 #include <assert.h>
 #include <stdint.h>
@@ -29,6 +34,13 @@ static void reset(int kind,int status,int bytes,void *data){assert(stalled);asse
 static struct {void(*stall)(unsigned);} boot={stall},*BS=&boot;
 static struct {void(*reset_system)(int,int,int,void*);} runtime={reset};
 static struct {typeof(runtime)*rt;} system_table={&runtime},*ST=&system_table;
+/* The dispatch body also consults the Project Boot menu before the reset/guard
+ * logic. Those menu globals live outside the extracted slice; supply the same
+ * declarations and an idle menu so the exercised paths see no pending action. */
+#include "op13_boot_menu.h"
+static struct op13_menu boot_menu;
+static unsigned menu_ios_prepared;
+static int boot_menu_stop(void) { return 0; }
 '''+prefix+r'''
 }
 int main(void){
@@ -51,5 +63,7 @@ int main(void){
 '''
 with tempfile.TemporaryDirectory() as d:
  p=Path(d);(p/'test.c').write_text(source)
- subprocess.run(['/usr/bin/clang','-std=gnu11','-Wall','-Wextra','-Werror','-Wno-unused-variable','-fsanitize=address,undefined',str(p/'test.c'),'-o',str(p/'test')],check=True)
+ subprocess.run(['/usr/bin/clang','-std=gnu11','-Wall','-Wextra','-Werror','-Wno-unused-variable',
+                 '-Wno-unused-function','-Wno-unused-parameter','-fsanitize=address,undefined',
+                 '-I',str(ROOT/'source/ios27/xnuloader'),str(p/'test.c'),'-o',str(p/'test')],check=True)
  subprocess.run([str(p/'test')],check=True)

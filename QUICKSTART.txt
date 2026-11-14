@@ -16,10 +16,15 @@ Source/build requirements: source/ios27/README.md.
 Boot in the original local workspace
 ------------------------------------
 Start Android, enable USB debugging, authorize this Mac and connect USB.
-The local runner is configured for the owner's phone serial and board sun;
-adapt SERIAL for another device. Use Python3.11+, adb and fastboot on PATH.
+The runner takes the phone serial from --serial or ANDROID_SERIAL; nothing is
+hard-coded, so substitute your own device. Use Python3.11+, adb and fastboot
+on PATH.
 
-/opt/homebrew/bin/python3 ~/Documents/Porting/OnePlus13-iOS-RAM/experimental/ios27/v2/boot-ios27.py
+/opt/homebrew/bin/python3 ~/Documents/Porting/OnePlus13-iOS-RAM/experimental/ios27/v2/boot-ios27.py --serial YOUR_SERIAL
+
+Validate the matching local files without contacting the phone first:
+
+/opt/homebrew/bin/python3 .../experimental/ios27/v2/boot-ios27.py --check
 
 Its local BOOT-PREFLIGHT.json selects:
   UEFI:   experimental/ios27/v2/dodge-ios-uefi.img

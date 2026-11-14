@@ -3811,8 +3811,10 @@ run_kernel(int have_checkpoint, uint64_t checkpoint)
 	 */
 	dt_identity(&w, identity_root, sizeof(identity_root) / sizeof(identity_root[0]), identity_root_data);
 	dt_prop_str(&w, "platform-name", "t8150");
-	/* what iBoot takes from the factory configuration of a real phone; fixed size fields */
-	dt_prop_padded(&w, "serial-number", "OP13DDGEBTW", 32);
+	/* what iBoot takes from the factory configuration of a real phone; fixed size fields.
+	 * The serial is a fixed synthetic placeholder, not this handset's identity: the build
+	 * must not embed a real device identifier. Substitute your own here if a service needs it. */
+	dt_prop_padded(&w, "serial-number", "REDWOOD0000000000", 32);
 	dt_prop_padded(&w, "mlb-serial-number", "RDW00POCOX5PMLB00", 32);
 	dt_prop_padded(&w, "model-number", "MQAC2", 32);
 	dt_prop_padded(&w, "region-info", "LL/A", 32);

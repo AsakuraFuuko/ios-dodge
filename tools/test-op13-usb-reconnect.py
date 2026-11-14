@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / 'experimental/uefi-turtle/usb-reconnect-v8/loader-src'
+SOURCE = ROOT / 'source/ios27/xnuloader'
 loader = (SOURCE / 'loader.c').read_text()
 transport = loader[loader.index('/* All synchronous and asynchronous receive paths share'):loader.index('\nstatic void\nfb_reply(')]
 prefix = r'''
@@ -30,6 +30,15 @@ static void wdt_pet(void) {}
 static uint64_t usb_last_activity, usb_disconnects, usb_connects;
 static int usb_connected, usb_rx_queued, usb_out_pending, usb_in_pending;
 static int download_to_ramdisk;
+/* The receive loop consults the Project Boot menu and the Wi-Fi staging flag.
+ * Both live outside the exercised slice, so provide the same declarations the
+ * loader gives them and stub the menu transitions the harness never enters. */
+#include "op13_boot_menu.h"
+static int download_to_wmi;
+static struct op13_menu boot_menu;
+static unsigned menu_upload_active;
+static void boot_menu_poll(void) {}
+static void boot_menu_toggle_logs(void) { boot_menu.action = OP13_MENU_NONE; }
 static char usb_session[17] = "unit-test";
 static uint8_t rx[USB_CHUNK], tx[USB_CHUNK];
 static uint8_t *usb_tx_buf = tx;
@@ -141,7 +150,10 @@ int main(void) {
 with tempfile.TemporaryDirectory(prefix='op13-usb-test-') as directory:
     directory = Path(directory)
     (directory / 'test.c').write_text(prefix + transport + suffix)
+    # op13_boot_menu.h defines static helpers this harness never calls; the
+    # loader itself builds with -Wno-unused-parameter/-Wno-unused-function.
     subprocess.run(['/usr/bin/clang', '-std=gnu11', '-Wall', '-Wextra', '-Werror',
+                    '-Wno-unused-parameter', '-Wno-unused-function', '-Wno-unused-variable',
                     '-fsanitize=address,undefined', '-g', '-I', str(SOURCE),
                     str(directory / 'test.c'), '-o', str(directory / 'test')], check=True)
     subprocess.run([str(directory / 'test')], check=True, timeout=30)

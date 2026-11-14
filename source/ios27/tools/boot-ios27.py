@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
-"""First iOS27 RAM boot. No flash, erase, partition or storage commands."""
-from pathlib import Path
+"""iOS27 RAM boot. No flash, erase, partition or storage commands.
+
+--check validates the matching local profile without contacting the phone.
+Pass the phone serial with --serial or ANDROID_SERIAL; it is never hard-coded.
+"""
+import argparse
 import hashlib
 import json
+import os
+from pathlib import Path
 import shutil
 import subprocess
+import sys
 import time
 
 BASE = Path(__file__).resolve().parent
-SERIAL = '3B1F6GE8WTX79TGT'
-OUT = BASE / ('phone-' + time.strftime('%Y%m%d-%H%M%S'))
-OUT.mkdir()
+SERIAL = None
+OUT = None
 receipts = []
 
 
@@ -66,15 +72,83 @@ def upload_system(system_path):
         chunk.unlink(missing_ok=True)
 
 
-def main():
-    preflight = json.loads((BASE / 'BOOT-PREFLIGHT.json').read_text())
-    images = preflight['images']
-    for name in ['uefi', 'payload', 'boot', 'system']:
-        path = Path(images[name]['path'])
-        assert path.stat().st_size == images[name]['bytes']
+IMAGE_ROLES = ['uefi', 'payload', 'boot', 'system']
+
+
+def load_profile():
+    """Read BOOT-PREFLIGHT.json and report every missing or mismatched input.
+
+    Returns (images, problems). A source snapshot ships no local build outputs,
+    so this path must explain what to supply rather than raise on the first
+    absent file.
+    """
+    manifest = BASE / 'BOOT-PREFLIGHT.json'
+    if not manifest.exists():
+        return None, [f'{manifest}: missing preflight profile']
+    try:
+        preflight = json.loads(manifest.read_text())
+    except (OSError, ValueError) as error:
+        return None, [f'{manifest}: unreadable preflight profile ({error})']
+    images = preflight.get('images')
+    if not isinstance(images, dict):
+        return None, [f'{manifest}: no images section']
+    problems = []
+    for name in IMAGE_ROLES:
+        entry = images.get(name)
+        if not isinstance(entry, dict) or 'path' not in entry:
+            problems.append(f'images.{name}: not described in the profile')
+            continue
+        path = Path(entry['path'])
+        if not path.is_absolute():
+            path = (BASE / path).resolve()
+        if not path.exists():
+            problems.append(f'{name}: missing {path}')
+            continue
+        expected = entry.get('bytes')
+        if expected is not None and path.stat().st_size != expected:
+            problems.append(
+                f'{name}: {path} is {path.stat().st_size} bytes, profile says {expected}')
+            continue
         if name != 'system':
+            expected_hash = entry.get('sha256')
+            if not expected_hash:
+                problems.append(f'{name}: profile has no sha256 for {path}')
+                continue
             with path.open('rb') as stream:
-                assert hashlib.file_digest(stream, 'sha256').hexdigest() == images[name]['sha256']
+                actual = hashlib.file_digest(stream, 'sha256').hexdigest()
+            if actual != expected_hash:
+                problems.append(f'{name}: {path} sha256 {actual} != {expected_hash}')
+    return (None if problems else images), problems
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--serial', default=os.environ.get('ANDROID_SERIAL'),
+                        help='adb/fastboot serial of the phone (defaults to ANDROID_SERIAL)')
+    parser.add_argument('--check', action='store_true',
+                        help='validate the local profile without contacting the phone')
+    args = parser.parse_args()
+
+    images, problems = load_profile()
+    if problems:
+        print('The local iOS27 boot profile is not ready:', file=sys.stderr)
+        for problem in problems:
+            print('  - ' + problem, file=sys.stderr)
+        print('\nSupply the matching local build outputs listed in QUICKSTART.txt.',
+              file=sys.stderr)
+        raise SystemExit(1)
+    if args.check:
+        print(json.dumps({'profile_verified': True, 'device_contacted': False,
+                          'phone_partition_writes': False}, indent=2))
+        return
+    if not args.serial:
+        parser.error('--serial or ANDROID_SERIAL is required to boot')
+
+    global OUT, SERIAL
+    SERIAL = args.serial
+    OUT = BASE / ('phone-' + time.strftime('%Y%m%d-%H%M%S'))
+    OUT.mkdir()
     print('Waiting for Android startup', flush=True)
     for _ in range(90):
         state = run(['adb', '-s', SERIAL, 'get-state'], check=False)

@@ -14,7 +14,7 @@ The separate `performance-gpu-v4` test passed Vulkan instance/device creation, b
 
 The user confirmed correct interface appearance in the initial Metal trial but still reported severe lag. A successful standalone shader test does not establish a 60/120 FPS interface.
 
-All phone boots use `fastboot boot`; system images are uploaded into RAM. No phone partitions are written. Serial requested for this build: `OP13DDGEBTW`. The working iOS 16 defaults are preserved.
+All phone boots use `fastboot boot`; system images are uploaded into RAM. No phone partitions are written. The working iOS 16 defaults are preserved.
 
 ## CPU governor verification
 
